@@ -1,0 +1,6 @@
+(library
+ (libraries core crazy_eights_logic_library)
+ (name crazy_eights_test_library)
+ (inline_tests)
+ (preprocess
+  (pps ppx_jane)))
