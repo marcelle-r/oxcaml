@@ -1,3 +1,5 @@
+> **Crazy Eights** (Marcelle de Matos Ribeiro): my game is in [`crazy_eights/`](crazy_eights/). The rest of this repository is the course template.
+
 # TicTacToe using OCaml
 
 To make a dev-environment, press the green "Code" button, then select "+" next to "Codespaces".  A new Codespace will open.  It currently takes 20-40 minutes to initialize; please be patient.
