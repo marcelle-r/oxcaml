@@ -1,0 +1,26 @@
+# Continuous Integration: on every push and pull request, GitHub builds the
+# Crazy Eights code and runs all its tests (dune expect tests).
+name: Crazy Eights tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up OCaml 4.14 (same version as the Codespace)
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "4.14"
+          dune-cache: true
+
+      - name: Install the libraries the game uses
+        run: opam install --yes dune core.v0.16.2 ppx_jane.v0.16.0
+
+      - name: Build and run the Crazy Eights tests
+        run: opam exec -- dune build @crazy_eights/runtest
