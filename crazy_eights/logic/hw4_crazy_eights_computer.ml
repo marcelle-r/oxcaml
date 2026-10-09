@@ -10,6 +10,7 @@ open Hw2_crazy_eights_logic
    plays each of its options to the end of the game, and keeps the option that wins
    most often. *)
 
+(* Whose turn is it? [None] when the game is over. *)
 let whose_turn (t : Game_state.t) =
   match t.decision with
   | In_progress { whose_turn } -> Some whose_turn
@@ -18,6 +19,7 @@ let whose_turn (t : Game_state.t) =
 
 (* ---------- The trivial opponent ---------- *)
 
+(* Easy player: get every allowed move and pick one at random. *)
 let random_move t ~random_state =
   List.random_element (Game_state.get_all_moves t) ~random_state
 ;;
@@ -34,6 +36,8 @@ let best_suit_to_declare hand =
   |> Option.value_exn
 ;;
 
+(* Simple rules: play the matching card worth the most points; if none, play an 8 and
+   pick my best suit; if no 8, draw; if the stock is empty, pass. *)
 let greedy_move (t : Game_state.t) ~random_state : Move.t option =
   match whose_turn t with
   | None -> None
@@ -108,6 +112,8 @@ let score (decision : Decision.t) ~player =
   | In_progress _ -> 0.
 ;;
 
+(* Smart player: for up to 2 seconds, imagine many games for each allowed move and
+   pick the move that wins most often. *)
 let smart_move
   ?(time_limit = Time_ns.Span.of_int_sec 2)
   ?(max_simulations = Int.max_value)
@@ -116,12 +122,15 @@ let smart_move
   =
   match whose_turn t, Game_state.get_all_moves t with
   | None, _ | _, [] -> None
+  (* Only one allowed move: no need to think. *)
   | Some _, [ only_move ] -> Some only_move
   | Some player, moves ->
     let moves = Array.of_list moves in
     let num_moves = Array.length moves in
+    (* For each move: how many imagined games it won, and how many times we tried it. *)
     let wins = Array.create ~len:num_moves 0. in
     let tries = Array.create ~len:num_moves 0 in
+    (* When to stop thinking: now + 2 seconds. *)
     let deadline = Time_ns.add (Time_ns.now ()) time_limit in
     let simulations = ref 0 in
     (* Try every move once, then pick which move to simulate next with UCB1: mostly the
@@ -147,6 +156,8 @@ let smart_move
       !simulations < max_simulations
       && (!simulations < num_moves || Time_ns.( < ) (Time_ns.now ()) deadline)
     do
+      (* One imagined game: pick a move to test, guess the hidden cards, make the move,
+         play the game to the end, and add 1 if we won. *)
       let i = pick_move () in
       let guess = guess_hidden_cards t ~player ~random_state in
       (match Game_state.make_move guess moves.(i) with
@@ -155,6 +166,7 @@ let smart_move
       tries.(i) <- tries.(i) + 1;
       incr simulations
     done;
+    (* Time's up: choose the move with the best wins / tries. *)
     let win_rate i = if tries.(i) = 0 then -1. else wins.(i) /. Float.of_int tries.(i) in
     let best = ref 0 in
     for i = 1 to num_moves - 1 do

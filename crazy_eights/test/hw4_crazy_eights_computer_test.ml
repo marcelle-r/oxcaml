@@ -27,8 +27,10 @@ let make_state ?stock ?(whose_turn = 0) ~hands ~discard_pile () : Game_state.t =
 ;;
 
 let print_move move = print_s [%sexp (move : Move.t option)]
+(* Is this move in the list of allowed moves? *)
 let is_legal t move = List.mem (Game_state.get_all_moves t) move ~equal:Move.equal
 
+(* A real new game with a shuffled deck. *)
 let new_game ~num_players ~random_state =
   Game_state.create ~num_players ~deck:(Card.shuffled_deck random_state)
   |> Result.ok
@@ -208,6 +210,8 @@ let%expect_test "smart_move: stops after about 2 seconds" =
 
 (* ---------- Matches between the players ---------- *)
 
+(* Plays one whole game between computer players and returns who won. If a player ever
+   picks a move that isn't allowed, the test stops with an error. *)
 let play_game ~players ~random_state =
   let rec loop (t : Game_state.t) moves_made =
     if moves_made > 5_000 then raise_s [%message "game did not end"];
@@ -228,7 +232,8 @@ let play_game ~players ~random_state =
   loop (new_game ~num_players:(List.length players) ~random_state) 0
 ;;
 
-(* Plays 2-player games between [a] and [b], switching who goes first every game. *)
+(* Plays many 2-player games between [a] and [b] and prints the score. Who goes first
+   switches every game, because going first is an advantage. *)
 let play_match ~games ~a ~b ~a_name ~b_name ~seed =
   let random_state = Random.State.make [| seed |] in
   let a_wins = ref 0 in

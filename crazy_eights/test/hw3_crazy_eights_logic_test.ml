@@ -61,6 +61,7 @@ let decision_of_hw1 (decision : Hw1.decision) : Decision.t =
   | Tie players -> Tie players
 ;;
 
+(* Turns a whole HW1 game state into the HW2 version, so the HW2 rules can use it. *)
 let state_of_hw1 (state : Hw1.game_state) : Game_state.t =
   { hands = List.map state.hands ~f:cards_of_hw1
   ; stock = cards_of_hw1 state.stock
@@ -72,8 +73,10 @@ let state_of_hw1 (state : Hw1.game_state) : Game_state.t =
   }
 ;;
 
+(* Every card in the game: all the hands, the stock and the discard pile. *)
 let all_cards (t : Game_state.t) = List.concat t.hands @ t.stock @ t.discard_pile
 
+(* True when the game still has exactly the 52 cards: none lost, none copied. *)
 let is_one_full_deck t =
   List.equal
     Card.equal
@@ -120,6 +123,8 @@ let move_to_string (move : Move.t) =
   | Pass -> "pass"
 ;;
 
+(* Prints the game in a short way: each hand, the top card, the suit to follow, the
+   stock size, and whose turn it is (or who won). *)
 let print_state (t : Game_state.t) =
   List.iteri t.hands ~f:(fun player hand ->
     printf "player %d: %s\n" player (cards_to_string hand));
@@ -132,12 +137,14 @@ let print_state (t : Game_state.t) =
   print_s [%sexp (t.decision : Decision.t)]
 ;;
 
+(* Prints every move the current player is allowed to make, one per line. *)
 let print_moves t =
   match Game_state.get_all_moves t with
   | [] -> print_endline "(no moves: the game is over)"
   | moves -> List.iter moves ~f:(fun move -> print_endline (move_to_string move))
 ;;
 
+(* Shortcuts to write cards and moves in the tests, e.g. [play Two Hearts]. *)
 let card rank suit : Card.t = { rank; suit }
 let play rank suit : Move.t = Play { card = card rank suit; declared_suit = None }
 
@@ -187,6 +194,7 @@ let move_and_print t move =
   | Ok next -> print_state next
 ;;
 
+(* Tries a move and only prints "Ok" or the reason it was refused. *)
 let try_move t move =
   match Game_state.make_move t move with
   | Ok _ -> print_endline "Ok"
@@ -197,7 +205,8 @@ let try_move t move =
    1. The HW1 triplets
    ====================================================================== *)
 
-(* Checks that [make_move from move = to_], ignoring [last_move]. *)
+(* The HW1 check: start from my HW1 "before" state, make my HW1 move, and the result
+   must be exactly my HW1 "after" state ([last_move] is ignored). *)
 let check_triplet ~from ~move ~to_ =
   let from = state_of_hw1 from in
   let expected = state_of_hw1 to_ in
@@ -257,6 +266,7 @@ let%expect_test "HW1 triplet 5: playing the last card wins" =
    2. Every HW1 state, and what the player to move can do there
    ====================================================================== *)
 
+(* Shows a HW1 state, checks it has all 52 cards, and lists the moves allowed there. *)
 let print_hw1_state state =
   let t = state_of_hw1 state in
   print_state t;
@@ -733,6 +743,7 @@ let%expect_test "an illegal move doesn't change anything" =
    5. Creating a game
    ====================================================================== *)
 
+(* Shows how a new game was dealt: hand sizes, stock size, the first card on the pile. *)
 let print_create_result result =
   match result with
   | Error errors -> print_s [%sexp (errors : Game_state.Create_error.t list)]
@@ -818,6 +829,8 @@ let every_possible_move : Move.t list =
   @ [ Draw; Pass ]
 ;;
 
+(* Plays 1000 games choosing random allowed moves. Every game must end (a winner or a
+   tie) and no card may ever go missing. *)
 let%expect_test "1000 random games" =
   let random_state = Random.State.make [| 42 |] in
   let games_over = ref 0 in
@@ -841,7 +854,8 @@ let%expect_test "1000 random games" =
   [%expect {| 1000 of 1000 games ended with a winner or a tie |}]
 ;;
 
-(* Checks one step of a game against the rules. Raises with a message on any problem. *)
+(* Checks one step of a game against the rules: did the move change the game the way it
+   should? Stops the test with a message on any problem. *)
 let check_step (before : Game_state.t) (move : Move.t) (after : Game_state.t) =
   let fail msg = raise_s [%message msg (before : Game_state.t) (move : Move.t)] in
   let player =
@@ -859,6 +873,7 @@ let check_step (before : Game_state.t) (move : Move.t) (after : Game_state.t) =
     then fail "another player's hand changed");
   match move with
   | Play { card; declared_suit } ->
+    (* A played card goes on top, leaves the hand, and sets the suit to follow. *)
     if not (Card.equal (Game_state.top_card after) card)
     then fail "played card not on top";
     if List.mem hand_after card ~equal:Card.equal then fail "played card still in hand";
@@ -871,11 +886,13 @@ let check_step (before : Game_state.t) (move : Move.t) (after : Game_state.t) =
      | In_progress { whose_turn } when whose_turn = (player + 1) % n -> ()
      | _ -> fail "wrong decision after a play")
   | Draw ->
+    (* Drawing takes the top card of the stock, and it's still the same player's turn. *)
     if List.length after.stock <> List.length before.stock - 1 then fail "stock size";
     if not (List.mem hand_after (List.hd_exn before.stock) ~equal:Card.equal)
     then fail "drew a card that wasn't the top of the stock";
     if not (Decision.equal after.decision before.decision) then fail "turn changed"
   | Pass ->
+    (* Passing adds one to the count; when everyone has passed, the game is decided. *)
     if after.consecutive_passes <> before.consecutive_passes + 1 then fail "passes count";
     (match after.decision with
      | In_progress { whose_turn } when whose_turn = (player + 1) % n -> ()
@@ -912,6 +929,8 @@ let%expect_test "random exploration: every step follows the rules" =
           raise_s
             [%message
               "listed move refused" (move : Move.t) (error : Game_state.Move_error.t)]);
+      (* Try 25 random moves, most of them illegal: the game must accept exactly the
+         ones in the list of allowed moves. *)
       for _ = 1 to 25 do
         let move = List.random_element_exn every_possible_move ~random_state in
         let listed = List.mem moves move ~equal:Move.equal in
@@ -925,6 +944,7 @@ let%expect_test "random exploration: every step follows the rules" =
       | Winner _ -> count "blocked, lowest hand won"
       | Tie _ -> count "blocked, tie"
       | In_progress _ ->
+        (* Pick a random allowed move, make it, and check it followed the rules. *)
         let move = List.random_element_exn moves ~random_state in
         let next = ok_exn (Game_state.make_move t move) in
         check_step t move next;
