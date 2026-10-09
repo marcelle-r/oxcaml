@@ -108,6 +108,7 @@ module Game_state = struct
     [@@deriving sexp, compare, equal]
   end
 
+  (* True if [deck] is exactly the 52 cards: none missing, none twice. *)
   let is_full_deck deck =
     List.equal
       Card.equal
@@ -128,6 +129,9 @@ module Game_state = struct
     loop [] stock
   ;;
 
+  (* Starts a new game: checks there are 2 to 8 players and a real 52-card deck, deals
+     7 cards each (2 players) or 5 each (3 or more), and flips the first card of the
+     discard pile. Player 0 goes first. *)
   let create ~num_players ~deck : (t, Create_error.t list) Result.t =
     let players_ok = num_players >= min_players && num_players <= max_players in
     let deck_ok = is_full_deck deck in
@@ -159,18 +163,24 @@ module Game_state = struct
   let num_players t = List.length t.hands
   let top_card t = List.hd_exn t.discard_pile
 
+  (* Penalty points of a hand (8 = 50, K/Q/J = 10, A = 1, others their number), used
+     when the game is blocked. *)
   let hand_points hand =
     List.sum (module Int) hand ~f:(fun (card : Card.t) -> Rank.points card.rank)
   ;;
 
+  (* A card can be played if it's an 8, OR it has the suit to follow, OR it has the same
+     number or face as the top card. *)
   let can_play_card t (card : Card.t) =
     Rank.equal card.rank Eight
     || Suit.equal card.suit t.current_suit
     || Rank.equal card.rank (top_card t).rank
   ;;
 
+  (* The next player, going back to player 0 after the last one. *)
   let next_player t player = (player + 1) % num_players t
 
+  (* Gives one player a new hand; everyone else keeps theirs. *)
   let set_hand t player hand =
     List.mapi t.hands ~f:(fun i old_hand -> if i = player then hand else old_hand)
   ;;
@@ -201,6 +211,11 @@ module Game_state = struct
 
   let playable_cards t hand = List.filter hand ~f:(can_play_card t)
 
+  (* Every move the current player is allowed to make:
+     - each card that can be played (an 8 is listed 4 times, once per suit to declare),
+     - draw, if the stock still has cards,
+     - pass, only if there is nothing else to do.
+     No moves at all once the game is over. *)
   let get_all_moves t : Move.t list =
     match t.decision with
     | Winner _ | Tie _ -> []
@@ -219,6 +234,8 @@ module Game_state = struct
       plays @ draw @ pass
   ;;
 
+  (* Puts a card on the pile: it leaves the hand, it sets the suit to follow, and then
+     either the player wins (empty hand) or it's the next player's turn. *)
   let play_card t ~player ~hand ~(card : Card.t) ~suit =
     let hand = List.filter hand ~f:(fun c -> not (Card.equal c card)) in
     let decision : Decision.t =
@@ -235,6 +252,8 @@ module Game_state = struct
     }
   ;;
 
+  (* Makes a move for the current player. Returns [Ok new_state], or [Error reason] when
+     the move isn't allowed (e.g. [Card_not_in_hand]), so the game can say why. *)
   let make_move t (move : Move.t) : (t, Move_error.t) Result.t =
     match t.decision with
     | Winner _ | Tie _ -> Error Game_is_over
@@ -243,6 +262,8 @@ module Game_state = struct
       let result : (t, Move_error.t) Result.t =
         match move with
         | Play { card; declared_suit } ->
+          (* The card must be in my hand and match. An 8 needs a suit to declare; other
+             cards can't declare one. *)
           if not (List.mem hand card ~equal:Card.equal)
           then Error Card_not_in_hand
           else if not (can_play_card t card)
@@ -265,6 +286,8 @@ module Game_state = struct
                ; consecutive_passes = 0
                })
         | Pass ->
+          (* Only allowed when the stock is empty and nothing can be played. If everyone
+             passes in a row, the game is blocked and the lowest points win. *)
           if (not (List.is_empty t.stock)) || not (List.is_empty (playable_cards t hand))
           then Error Cannot_pass
           else (

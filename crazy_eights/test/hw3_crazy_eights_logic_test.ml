@@ -182,12 +182,14 @@ let rest_of_deck (t : Game_state.t) =
     not (List.mem (all_cards t) c ~equal:Card.equal))
 ;;
 
+(* Takes the new state out of [Ok]; if the move was refused, the test stops. *)
 let ok_exn result =
   match result with
   | Ok t -> t
   | Error error -> raise_s [%message "unexpected error" (error : Game_state.Move_error.t)]
 ;;
 
+(* Makes a move and prints the new game, or the reason the move was refused. *)
 let move_and_print t move =
   match Game_state.make_move t move with
   | Error error -> print_s [%message "Error" (error : Game_state.Move_error.t)]
